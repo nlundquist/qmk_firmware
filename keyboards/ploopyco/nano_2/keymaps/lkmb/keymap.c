@@ -68,18 +68,18 @@ uint32_t scroll_lock_timeout(uint32_t trigger_time, void *cb_arg) {
     } else {
         scroll_enabled = false;
     }
-    //scroll_lock_timer_enabled = false;
+    scroll_lock_timer_enabled = false;
     return 0; // Don't repeat
 }
 
 report_mouse_t pointing_device_task_user(report_mouse_t mouse_report) {
     if ((mouse_report.x - last_x) != 0 || (mouse_report.y - last_y) != 0) {
-        //if (scroll_lock_timer_enabled) {
+        if (scroll_lock_timer_enabled) {
             extend_deferred_exec(scroll_lock_timer, SCROLL_LOCK_TIMEOUT);
-        //}
+        }
         else if (!host_keyboard_led_state().scroll_lock && !scroll_enabled) {
             tap_code(KC_SCROLL_LOCK);
-            //scroll_lock_timer_enabled = true;
+            scroll_lock_timer_enabled = true;
             scroll_lock_timer = defer_exec(SCROLL_LOCK_TIMEOUT, scroll_lock_timeout, NULL);
         }
     }
@@ -115,7 +115,7 @@ uint32_t command_timeout(uint32_t trigger_time, void *cb_arg) {
             break;
         case CMD_RESET:
 #           ifdef CONSOLE_ENABLE
-            uprint("QK_BOOT)\n");ff
+            uprint("QK_BOOT)\n");
 #           endif
             reset_keyboard();
             break;
