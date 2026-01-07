@@ -28,9 +28,8 @@
 // is 55ms for a single tap.
 // https://recordsetter.com/world-record/index-finger-taps-minute/46066
 #define LED_CMD_TIMEOUT 25
-#define SCROLL_LOCK_TIMEOUT 200
-#define DELTA_X_THRESHOLD 60
-#define DELTA_Y_THRESHOLD 15
+#define SCROLL_LOCK_TIMEOUT 300
+#define INIT_SCROLL_DELTA 3
 
 typedef enum {
     // You could theoretically define 0b00 and send it by having a macro send
@@ -49,8 +48,7 @@ static bool   in_cmd_window   = false;
 static int8_t last_x          = 0;
 static int8_t last_y          = 0;
 
-static deferred_token scroll_lock_timer;
-static bool           scroll_lock_timer_enabled = false;
+static deferred_token scroll_lock_timer = INVALID_DEFERRED_TOKEN;
 
 typedef struct {
     led_cmd_t led_cmd;
@@ -63,23 +61,36 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 };
 
 uint32_t scroll_lock_timeout(uint32_t trigger_time, void *cb_arg) {
+    scroll_lock_timer = INVALID_DEFERRED_TOKEN;
+
     if (host_keyboard_led_state().scroll_lock) {
         tap_code(KC_SCROLL_LOCK);
     } else {
         scroll_enabled = false;
     }
-    scroll_lock_timer_enabled = false;
+
     return 0; // Don't repeat
 }
 
 report_mouse_t pointing_device_task_user(report_mouse_t mouse_report) {
-    if ((mouse_report.x - last_x) != 0 || (mouse_report.y - last_y) != 0) {
-        if (scroll_lock_timer_enabled) {
+    uint8_t delta_x = abs(mouse_report.x - last_x);
+    uint8_t delta_y = abs(mouse_report.y - last_y);
+
+    if (delta_x + delta_y > 0) {
+        if (scroll_lock_timer != INVALID_DEFERRED_TOKEN) {
             extend_deferred_exec(scroll_lock_timer, SCROLL_LOCK_TIMEOUT);
         }
-        else if (!host_keyboard_led_state().scroll_lock && !scroll_enabled) {
-            tap_code(KC_SCROLL_LOCK);
-            scroll_lock_timer_enabled = true;
+        else if (!scroll_enabled && !host_keyboard_led_state().scroll_lock) {
+            if (delta_x + delta_y >= INIT_SCROLL_DELTA) {
+                tap_code(KC_SCROLL_LOCK);
+                scroll_lock_timer = defer_exec(SCROLL_LOCK_TIMEOUT, scroll_lock_timeout, NULL);
+            }
+        } else if (scroll_enabled && !host_keyboard_led_state().scroll_lock) {
+            // attempt to fix race condition with stuck scroll state
+            scroll_enabled = false;
+        } else {
+            // attempt to fix race condition with stuck scroll state
+            scroll_enabled = true;
             scroll_lock_timer = defer_exec(SCROLL_LOCK_TIMEOUT, scroll_lock_timeout, NULL);
         }
     }
@@ -91,6 +102,7 @@ report_mouse_t pointing_device_task_user(report_mouse_t mouse_report) {
 }
 
 void keyboard_post_init_user(void) {
+    scroll_enabled = host_keyboard_led_state().scroll_lock;
     num_lock_state  = host_keyboard_led_state().num_lock;
     caps_lock_state = host_keyboard_led_state().caps_lock;
 }
